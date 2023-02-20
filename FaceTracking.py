@@ -1,25 +1,33 @@
 import time
-
 import numpy as np
 from time import sleep
 from djitellopy import tello
 import cv2
+import HandTrackingModule as htm
+import mediapipe as mp
+import math
 
 me = tello.Tello()
 me.connect()
 print(me.get_battery())
 
 
-me.takeoff()
-me.move_up(130)
-time.sleep(2.2)
+# me.takeoff()
+# me.move_up(130)
+# time.sleep(2.2)
 me.streamon()
 
+#faceTracking:
 w, h = 360, 240
 # cap = cv2.VideoCapture(0)
 fbRange = [7000, 8000] # forward and backword range
 pid = [0.4, 0.4, 0] #change these values if i can't find good results
 pError = 0
+
+#handTracking:
+pTime = 0
+cTime = 0
+detector = htm.handDetector(detectionCon=0.7)
 
 def findFace(img):
     faceCascade = cv2.CascadeClassifier("Resources/haarcascade_frontalface_default.xml")
@@ -74,10 +82,41 @@ def trackFace(info, w, pid, pError):
 
 
 while True:
+    #faceTracking:
     img = me.get_frame_read().frame
     img = cv2.resize(img, (w, h))
     img, info = findFace(img)
     pError = trackFace(info, w, pid, pError)
+
+    #handTracking:
+    #success, img = cap.read()
+    img = detector.findHands(img)
+    lmList = detector.findPosition(img)
+    if len(lmList) != 0:
+        #print(lmList[4], lmList[8])
+
+        x1, y1 = lmList[4][1], lmList[4][2]
+        x2, y2 = lmList[8][1], lmList[8][2]
+        cx, cy = (x1+x2)//2, (y1+y2)//2
+
+        cv2.circle(img, (x1, y1), 5,  (255, 0 ,255), cv2.FILLED)
+        cv2.circle(img, (x2, y2), 5, (255, 0, 255), cv2.FILLED)
+        cv2.line(img, (x1, y1), (x2, y2), (255, 0, 255), 3)
+        cv2.circle(img, (cx, cy), 5, (255, 0, 255), cv2.FILLED)
+
+        length = math.hypot(x2-x1, y2-y1)
+        print(length)
+
+        if length < 40:
+            cv2.circle(img, (cx, cy), 6, (0, 255, 0), cv2.FILLED)
+            me.flip_back()
+
+    cTime = time.time()
+    fps = 1 / (cTime - pTime)
+    pTime = cTime
+
+    cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN, 3, (255, 0, 255), 3)
+
     cv2.imshow("Output", img)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         me.land()
